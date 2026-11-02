@@ -18,7 +18,13 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font:15px sy
 #ctl{display:flex;gap:10px;padding:8px 10px}
 button{font:inherit;font-weight:700;border:0;border-radius:12px;min-height:52px;color:#1b1406;background:var(--acc)}
 #clear{flex:1;background:#4a4760;color:var(--fg)}
-#cast{flex:2.5;font-size:18px}
+#cast{flex:2.5;font-size:18px;--p:0%;background:linear-gradient(90deg,rgba(255,255,255,.5) var(--p),transparent var(--p)),var(--acc);touch-action:manipulation;transition:transform .08s,filter .08s,opacity .15s}
+#cast.idle{opacity:.55}
+button:not(:disabled):active{transform:scale(.95);filter:brightness(1.15)}
+#cast.pop{animation:pop .25s}
+#cast.dud{animation:dud .25s}
+@keyframes pop{0%{transform:scale(.92);filter:brightness(1.6)}60%{transform:scale(1.04)}100%{transform:scale(1)}}
+@keyframes dud{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
 button:disabled{opacity:.4}
 #skills{display:flex;gap:8px;padding:0 10px 8px;height:92px}
 .slot{flex:1;min-width:0;background:#2a2638;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;border:2px solid transparent;gap:1px;overflow:hidden}
@@ -41,7 +47,7 @@ button:disabled{opacity:.4}
 <div id="skills"></div>
 </div>
 <script>
-const CFG={ink:2,R:.055,learn:3,sim:.17,hp:5,autoDelay:1000,idle:1000,skillCd:8000,regen:.15,echoDelay:500,minLen:.2};
+const CFG={ink:2,R:.055,learn:3,sim:.17,hp:5,autoDelay:500,idle:500,skillCd:8000,regen:.15,echoDelay:500,minLen:.2,critAt:.95,perfAt:.8,goodAt:.45,critMult:2,pityAfter:2,pityRange:.15};
 const BUFFS={mirror:['Mirror','Reflect your drawing across the centerline. Free.'],kaleido:['Kaleidoscope','Four symmetric copies of your drawing. Ink for the original only.'],slot:['Extra Skill Slot','Hold 4 learned skills instead of 3.'],echo:['Echo','After each cast, repeat it once at half effect on survivors. Free.'],heal:['Full Heal','Restore all hearts. Repeatable.'],ink:['Extra Ink','+10% ink budget. Repeatable.'],regen:['Ink Regen','+10% ink regeneration while drawing. Repeatable.']};
 const REP={heal:1,ink:1,regen:1};
 const ADJ=['Ember','Gale','Thorn','Wisp','Rune','Frost','Spark','Dusk'];
@@ -57,22 +63,28 @@ const SND={on:true,ac:null};
 function audioInit(){if(!SND.ac){const A=window.AudioContext||window.webkitAudioContext;if(!A)return;SND.ac=new A();SND.m=SND.ac.createGain();SND.m.gain.value=.5;SND.m.connect(SND.ac.destination);setInterval(music,500)}if(SND.ac.resume)SND.ac.resume()}
 function tone(f,d,type,v,sl){if(!SND.on||!SND.ac)return;const a=SND.ac,t=a.currentTime,o=a.createOscillator(),g=a.createGain();o.type=type||'sine';o.frequency.setValueAtTime(f,t);if(sl)o.frequency.exponentialRampToValueAtTime(Math.max(20,sl),t+d);g.gain.setValueAtTime(v||.2,t);g.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(g);g.connect(SND.m);o.start(t);o.stop(t+d)}
 function noise(d,v,fr){if(!SND.on||!SND.ac)return;const a=SND.ac,n=Math.floor(a.sampleRate*d),b=a.createBuffer(1,n,a.sampleRate),x=b.getChannelData(0);for(let i=0;i<n;i++)x[i]=(Math.random()*2-1)*(1-i/n);const s=a.createBufferSource(),f=a.createBiquadFilter(),g=a.createGain();s.buffer=b;f.type='lowpass';f.frequency.value=fr||1200;g.gain.value=v||.3;s.connect(f);f.connect(g);g.connect(SND.m);s.start()}
-const sfx={cast:()=>{tone(300,.25,'sawtooth',.15,900);noise(.15,.15,3000)},perfect:()=>{tone(880,.12,'triangle',.2);tone(1320,.2,'triangle',.15)},good:()=>tone(520,.12,'triangle',.15),miss:()=>tone(160,.15,'square',.08,100),hurt:()=>{tone(120,.3,'sawtooth',.25,50);noise(.2,.25,600)},nova:()=>{tone(200,.5,'sine',.3,800);noise(.4,.2,2000)},storm:()=>{noise(.6,.35,7000);tone(1000,.3,'square',.12,150)},sun:()=>{tone(80,1,'sawtooth',.3,600);noise(.8,.4,3000)},beam:()=>tone(1200,.5,'sawtooth',.15,200),bolt:()=>{noise(.35,.3,6000);tone(900,.2,'square',.1,200)},meteor:()=>{tone(500,.35,'sawtooth',.2,60);setTimeout(()=>{noise(.5,.4,500);tone(70,.5,'sine',.4,30)},350)},learn:()=>[523,659,784].forEach((f,i)=>setTimeout(()=>tone(f,.2,'triangle',.18),i*90)),clear:()=>[392,523,659].forEach((f,i)=>setTimeout(()=>tone(f,.15,'square',.1),i*70)),draw:()=>tone(700+Math.random()*100,.04,'sine',.04)};
+const sfx={cast:()=>{tone(300,.25,'sawtooth',.15,900);noise(.15,.15,3000)},perfect:()=>{tone(880,.12,'triangle',.2);tone(1320,.2,'triangle',.15)},crit:()=>{tone(880,.1,'triangle',.22);tone(1320,.12,'triangle',.2);tone(1760,.25,'triangle',.18)},good:()=>tone(520,.12,'triangle',.15),miss:()=>tone(160,.15,'square',.08,100),hurt:()=>{tone(120,.3,'sawtooth',.25,50);noise(.2,.25,600)},nova:()=>{tone(200,.5,'sine',.3,800);noise(.4,.2,2000)},storm:()=>{noise(.6,.35,7000);tone(1000,.3,'square',.12,150)},sun:()=>{tone(80,1,'sawtooth',.3,600);noise(.8,.4,3000)},beam:()=>tone(1200,.5,'sawtooth',.15,200),bolt:()=>{noise(.35,.3,6000);tone(900,.2,'square',.1,200)},meteor:()=>{tone(500,.35,'sawtooth',.2,60);setTimeout(()=>{noise(.5,.4,500);tone(70,.5,'sine',.4,30)},350)},learn:()=>[523,659,784].forEach((f,i)=>setTimeout(()=>tone(f,.2,'triangle',.18),i*90)),clear:()=>[392,523,659].forEach((f,i)=>setTimeout(()=>tone(f,.15,'square',.1),i*70)),draw:()=>tone(700+Math.random()*100,.04,'sine',.04)};
 let mi=0;function music(){if(!G||G.state!='play')return;const sc=[110,131,147,165,196,165,147,131];tone(sc[mi++%8],.45,'triangle',.07);if(mi%4==0)tone(55,.9,'sine',.1)}
-/* ---------- timing rule: full damage at 80-100% approach, half at 50-80%, miss below ---------- */
-function rf(e){const p=1-Math.max(0,e.d-G.acc/1000)/e.d0,v=p>=.8?1:p>=.5?.5:0,[x,y]=ec(e,G.active.n);
- G.txt.push({x,y,s:v==1?'PERFECT':v?'GOOD':'MISS',c:v==1?'#ffe27a':v?'#bde':'#f88',l:700});
- if(!SND.t||performance.now()-SND.t>120){SND.t=performance.now();sfx[v==1?'perfect':v?'good':'miss']()}return v}
+/* ---------- timing: crit (x2) at 95-100% approach, full at 80-95%, half at 45-80%, miss below.
+   Secret pity: after a run of missed casts, a near-miss lands as a normal GOOD hit ---------- */
+function rf(e){const p=1-Math.max(0,e.d-G.acc/1000)/e.d0,now=performance.now(),[x,y]=ec(e,G.active.n);
+ let t=p>=CFG.critAt?3:p>=CFG.perfAt?2:p>=CFG.goodAt?1:0;
+ if(!t&&G.pity>=CFG.pityAfter&&p>=CFG.goodAt-CFG.pityRange)t=1;
+ if(t){G.pity=0;G.pityT=now}else if(now-G.pityT>250){G.pity++;G.pityT=now}
+ const v=[0,.5,1,CFG.critMult][t];
+ G.txt.push({x,y,s:['MISS','GOOD','PERFECT','CRIT!'][t],c:['#f88','#bde','#ffe27a','#ff7a45'][t],z:t==3?21:15,l:700});
+ if(t==3)burst(x,y,24,'#ff7a45');
+ if(!SND.t||now-SND.t>120){SND.t=now;sfx[['miss','good','perfect','crit'][t]]()}return v}
 function snake(e,x,y,c,f){
  const k=Math.min(1,G.acc/300),P=e.cells.map(([a,b],i)=>{const q=e.pc&&e.pc[i]||[a,b];return[x+(q[0]+(a-q[0])*k+.5)*c,y+(q[1]+(b-q[1])*k+.5)*c]});
  ctx.save();ctx.lineCap=ctx.lineJoin='round';ctx.shadowColor='rgba(0,0,0,.4)';ctx.shadowBlur=5;ctx.shadowOffsetY=3;
- for(const [w,col] of[[.8,e.pf==2?'#ffd400':'#1f3d1f'],[.62,e.fl>.4?'#fff':'#4fa84f']]){ctx.strokeStyle=col;ctx.lineWidth=c*w*f;ctx.beginPath();P.forEach((p,i)=>ctx[i?'lineTo':'moveTo'](p[0],p[1]));ctx.stroke();ctx.shadowColor='transparent'}
+ for(const [w,col] of[[.8,e.pf==3?'#ff5a36':e.pf==2?'#ffd400':'#1f3d1f'],[.62,e.fl>.4?'#fff':'#4fa84f']]){ctx.strokeStyle=col;ctx.lineWidth=c*w*f;ctx.beginPath();P.forEach((p,i)=>ctx[i?'lineTo':'moveTo'](p[0],p[1]));ctx.stroke();ctx.shadowColor='transparent'}
  const h=P[0],u=c*f;ctx.fillStyle='#fff';
  for(const s of[-1,1]){ctx.beginPath();ctx.arc(h[0]+s*u*.17,h[1]-u*.08,u*.11,0,7);ctx.fill();ctx.fillStyle='#000';ctx.beginPath();ctx.arc(h[0]+s*u*.17,h[1]-u*.08,u*.05,0,7);ctx.fill();ctx.fillStyle='#fff'}
  ctx.font='800 '+Math.max(10,u*.25)+'px system-ui';ctx.textAlign='center';const q=P[1]||h;ctx.fillText(Math.ceil(e.hp),q[0],q[1]+u*.08);ctx.restore();
 }
 function showMenu(){G.state='menu';const ov=$('ov');
- ov.innerHTML='<h2>Endless Corridor</h2><div style="max-width:340px;text-align:left;font-size:14px;line-height:1.5">• Draw on the paper board. Your drawing casts by itself after 1s idle (or tap Cast). Ink is limited.<br>• <b>Timing matters:</b> enemies take full damage only when 80–100% close (gold outline). 50–80% = half. Farther = miss.<br>• Separate or re-entering strokes hit multiple times. Some enemies are fast, some slow.<br>• Draw the same shape 3× to learn it as a skill; skills recast every 8s.<br>• Spells use 2 strokes: circle+line, two parallel lines, a V, or a cross (see the spellbook at the top).<br>• Boss every 5 waves grows the board. Every 5 waves pick a repeatable buff; every 10, a new ability.</div><button style="padding:0 44px">Play</button><button style="padding:0 20px;min-height:40px;background:#4a4760;color:#f3ead7">Sound: on</button>';
+ ov.innerHTML='<h2>Endless Corridor</h2><div style="max-width:340px;text-align:left;font-size:14px;line-height:1.5">• Draw on the paper board. Your drawing casts by itself after 0.5s idle (or tap Cast). Ink is limited.<br>• <b>Timing matters:</b> 95–100% close (red outline) is a <b>crit</b> for double damage. 80–95% (gold) = full damage. 45–80% = half. Farther = miss.<br>• Separate or re-entering strokes hit multiple times. Some enemies are fast, some slow.<br>• Draw the same shape 3× to learn it as a skill; skills recast every 8s.<br>• Spells use 2 strokes: circle+line, two parallel lines, a V, or a cross (see the spellbook at the top).<br>• Boss every 5 waves grows the board. Every 5 waves pick a repeatable buff; every 10, a new ability.</div><button style="padding:0 44px">Play</button><button style="padding:0 20px;min-height:40px;background:#4a4760;color:#f3ead7">Sound: on</button>';
  const[b1,b2]=ov.querySelectorAll('button');b1.onclick=()=>{audioInit();ov.style.display='none';G.state='play'};b2.onclick=()=>{SND.on=!SND.on;b2.textContent='Sound: '+(SND.on?'on':'off')};ov.style.display='flex'}
 /* ---------- waves ---------- */
 function genWave(w){
@@ -90,7 +102,7 @@ function genWave(w){
  return{n,w,es,boss};
 }
 function newGame(){
- G={wave:1,hp:CFG.hp,state:'play',acc:0,strokes:[],cur:null,inkUsed:0,pend:null,timers:[],fx:[],pts:[],txt:[],sh:0,buffs:{},maxSlots:3,pats:[],slots:[],match:null,hurt:0};
+ G={wave:1,hp:CFG.hp,state:'play',acc:0,strokes:[],cur:null,inkUsed:0,pend:null,timers:[],fx:[],pts:[],txt:[],sh:0,buffs:{},maxSlots:3,pats:[],slots:[],match:null,hurt:0,pity:0,pityT:-1e3};
  G.active=genWave(1);G.next=genWave(2);aid=null;$('ov').style.display='none';skills();
  toast('Draw on the board, then press Cast');
 }
@@ -291,7 +303,7 @@ function ui(){
  const w=G.active;$('wv').textContent=`Wave ${G.wave}${w.boss?' ★':''} · ${w.n}×${w.n}`;
  $('hp').innerHTML='♥'.repeat(Math.max(0,G.hp))+'<span style="color:#5bb8ff">'+'♥'.repeat(G.sh||0)+'</span>';
  $('ink').style.width=Math.max(0,100*(1-G.inkUsed/maxInk()))+'%';
- $('cast').disabled=!(G.state=='play'&&G.pend==null&&G.strokes.length);
+ {const b=$('cast'),ac=G.pend!=null?1-G.pend/CFG.autoDelay:G.idle!=null?1-G.idle/CFG.idle:0;b.classList.toggle('idle',!(G.state=='play'&&G.strokes.length));b.style.setProperty('--p',Math.max(0,Math.min(1,ac))*100+'%')}
  $('clear').disabled=G.pend!=null||!G.strokes.length;
  document.querySelectorAll('.slot').forEach((d,i)=>{const u=d.querySelector('u'),p=G.slots[i];if(u&&p)u.style.width=Math.min(100,(p.cd||0)/CFG.skillCd*100)+'%'});
 }
@@ -315,7 +327,10 @@ function endStroke(e){
  if(G.cur){if(G.cur.length<2)G.strokes=G.strokes.filter(s=>s!==G.cur);G.cur=null;if(G.strokes.length){updateMatch();G.idle=CFG.idle}}
 }
 cv.addEventListener('pointerup',endStroke);cv.addEventListener('pointercancel',endStroke);
-$('cast').onclick=()=>{if(G.pend==null)cast()};
+function flash(b,c){b.classList.remove('pop','dud');void b.offsetWidth;b.classList.add(c)}
+function pressCast(){const b=$('cast');if(G.state=='play'&&G.strokes.length){cast();flash(b,'pop')}else{flash(b,'dud');if(G.state=='play')toast('Draw something first')}}
+$('cast').addEventListener('pointerdown',e=>{e.preventDefault();pressCast()});
+$('cast').addEventListener('click',e=>{if(e.detail===0)pressCast()});
 $('clear').onclick=()=>{if(G.pend!=null)return;G.strokes=[];G.idle=null;G.cur=null;G.inkUsed=0;G.match=null;skills()};
 
 /* ---------- rendering ---------- */
@@ -332,7 +347,7 @@ function corridor(px,py,iw,ih){
 function enemy(e,cx,cy,w,h){
  ctx.save();ctx.translate(cx,cy);ctx.rotate(Math.sin(performance.now()/500+e.id)*.03);
  ctx.shadowColor='rgba(0,0,0,.4)';ctx.shadowBlur=5;ctx.shadowOffsetX=2;ctx.shadowOffsetY=3;
- if(e.pf===0)ctx.globalAlpha*=.6;ctx.fillStyle=e.fl>.4?'#fff':COL[e.type];ctx.strokeStyle=e.pf==2?'#ffd400':e.pf==1?'#fff':'#2a2013';ctx.lineWidth=e.pf==2?5:2;
+ if(e.pf===0)ctx.globalAlpha*=.6;ctx.fillStyle=e.fl>.4?'#fff':COL[e.type];ctx.strokeStyle=e.pf==3?'#ff5a36':e.pf==2?'#ffd400':e.pf==1?'#fff':'#2a2013';ctx.lineWidth=e.pf==3?7:e.pf==2?5:2;
  ctx.beginPath();ctx.roundRect(-w/2,-h/2,w,h,Math.min(w,h)*.18);ctx.fill();ctx.shadowColor='transparent';ctx.stroke();
  const u=Math.min(w,h);ctx.fillStyle='#2a2013';
  for(const s of[-1,1]){ctx.beginPath();ctx.arc(s*w*.2,-h*.12,u*.07,0,7);ctx.fill()}
@@ -346,7 +361,7 @@ function sheet(w,x,y,s,live,alpha){
  ctx.strokeStyle='#c9bd9c';ctx.lineWidth=1;const c=s/w.n;ctx.beginPath();
  for(let i=0;i<=w.n;i++){ctx.moveTo(x+i*c,y);ctx.lineTo(x+i*c,y+s);ctx.moveTo(x,y+i*c);ctx.lineTo(x+s,y+i*c)}ctx.stroke();
  for(const e of w.es){if(e.hp<=0)continue;
-  const pr=1-Math.max(0,e.d-G.acc/1000)/e.d0,f=live?(.55+.45*pr)*(1+.15*e.atk):1;if(live)e.pf=pr>=.8?2:pr>=.5?1:0;
+  const pr=1-Math.max(0,e.d-G.acc/1000)/e.d0,f=live?(.55+.45*pr)*(1+.15*e.atk):1;if(live)e.pf=pr>=CFG.critAt?3:pr>=CFG.perfAt?2:pr>=CFG.goodAt?1:0;
   if(e.type=='snake')snake(e,x,y,c,f);else for(const [cc,rr,cw,ch] of e.cells||[[e.c,e.r,e.w,e.h]])enemy(e,x+(cc+cw/2)*c,y+(rr+ch/2)*c,cw*c*f*.9,ch*c*f*.9)}
  ctx.restore();
 }
@@ -367,7 +382,7 @@ function draw(){
  for(const f of G.fx){const a=1-f.t;
   if(f.cps)inkPath(f.cps,f.echo?'#b46bff':(f.col||'#ffb347'),a*(f.echo?.8:1),true);else spellFx(f,a)}
  for(const p of G.pts){ctx.globalAlpha=Math.min(1,p.l/400);ctx.fillStyle=p.c;ctx.beginPath();ctx.arc(bx+p.x*S,by+p.y*S,3,0,7);ctx.fill()}ctx.globalAlpha=1;ctx.font='800 15px system-ui';ctx.textAlign='center';
- for(const t of G.txt){ctx.globalAlpha=Math.min(1,t.l/300);ctx.fillStyle=t.c;ctx.fillText(t.s,bx+t.x*S,by+t.y*S-(700-t.l)/700*30)}ctx.globalAlpha=1;
+ for(const t of G.txt){ctx.font='800 '+(t.z||15)+'px system-ui';ctx.globalAlpha=Math.min(1,t.l/300);ctx.fillStyle=t.c;ctx.fillText(t.s,bx+t.x*S,by+t.y*S-(700-t.l)/700*30)}ctx.globalAlpha=1;
  if(G.sh){ctx.strokeStyle='rgba(91,184,255,.6)';ctx.lineWidth=3*G.sh;ctx.strokeRect(bx,by,S,S)}
  if(G.hurt>0){ctx.fillStyle=`rgba(255,40,40,${G.hurt*.35})`;ctx.fillRect(0,0,W,H)}
  const ac=G.pend??G.idle;if(ac!=null&&ac>0){ctx.fillStyle='#fff';ctx.font='700 16px system-ui';ctx.textAlign='center';ctx.fillText('AUTO-CAST '+(ac/1000).toFixed(1)+'s',W/2,by-6)}
